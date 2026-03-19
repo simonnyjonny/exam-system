@@ -2,7 +2,14 @@
 
 ## 1. Schema Overview
 
-This document outlines the database schema for the Online Exam System. The design follows normalization principles while balancing query performance.
+The database schema is designed for an **MVP online exam system** with PostgreSQL and Prisma ORM.
+
+### Design Principles
+- **MVP-first**: Core features only, extensible for future
+- **Soft delete**: Destructive operations use `deletedAt` timestamp
+- **JSON fields**: Proper Prisma `Json` type for structured data
+- **Audit trail**: All admin actions logged
+- **Multi-attempt**: Students can retake papers multiple times
 
 ---
 
@@ -10,236 +17,473 @@ This document outlines the database schema for the Online Exam System. The desig
 
 ```
 ┌─────────────┐       ┌─────────────┐       ┌─────────────┐
-│    User     │       │   Paper     │       │   Result    │
+│    User     │       │   Paper     │       │  Question   │
 ├─────────────┤       ├─────────────┤       ├─────────────┤
-│ id          │◀──────│ created_by  │       │ student_id  │
-│ email       │       │ id          │◀──────│ paper_id    │
-│ password    │       │ title       │       │ id          │────▶ User
-│ name        │       │ duration    │       │ score       │
-│ role        │       │ passing_score│      │ submitted_at│
-│ created_at  │       │ status      │       │ answers     │
-│ updated_at  │       │ published_at│       └─────────────┘
-└─────────────┘       │ created_at  │              ▲
-        │             │ updated_at  │              │
-        │             └─────────────┘              │
-        │                    │                    │
-        ▼                    ▼                    ▼
-┌──────────────────────────────────────────────────────────┐
-│                     PaperQuestion                         │
-├──────────────────────────────────────────────────────────┤
-│ paper_id        │ question_id      │ order │ points     │
-└──────────────────────────────────────────────────────────┘
-        │                    │
-        ▼                    ▼
-┌─────────────┐       ┌─────────────┐
-│  Question   │       │   Category  │
-├─────────────┤       ├─────────────┤
-│ id          │◀──────│ id          │
-│ category_id │       │ name        │
-│ type        │       │ description │
-│ content     │       │ created_at  │
-│ options     │       └─────────────┘
-│ answer      │
-│ explanation │
-│ difficulty  │
-│ points      │
-│ created_at  │
-│ updated_at  │
-└─────────────┘
+│ id (PK)     │       │ id (PK)     │       │ id (PK)     │
+│ username    │       │ title       │◀──────│ subject_id  │
+│ email       │       │ subject_id  │       │ stem        │
+│ passwordHash│       │ creator_id │       │ options_json│
+│ role        │       │ status      │       │ answer_json │
+│ studentNo   │       └──────┬──────┘       │ difficulty  │
+│ status      │              │              │ creator_id  │
+│ deletedAt   │              │              │ deletedAt   │
+└──────┬──────┘              │              └──────┬──────┘
+       │                    │                     │
+       │                    ▼                     │
+       │              ┌─────────────┐             │
+       │              │PaperQuestion│             │
+       │              ├─────────────┤             │
+       │              │ paper_id    │◀────────────┤
+       │              │ question_id │             │
+       │              │ score       │             │
+       │              │ sort_order  │             │
+       │              └─────────────┘             │
+       │                    │                     │
+       │                    ▼                     │
+       │              ┌─────────────┐       ┌─────────────┐
+       └─────────────▶│ExamAttempt │◀──────│ExamAnswer   │
+                      ├─────────────┤       ├─────────────┤
+                      │ paper_id    │       │ attempt_id  │
+                      │ student_id  │       │ question_id │
+                      │ attempt_no  │       │ is_correct  │
+                      │ status      │       │ score       │
+                      │ start_time  │       └──────┬──────┘
+                      │ submit_time │              │
+                      │ total_score │              │
+                      └──────┬──────┘              │
+                             │                     │
+                             ▼                     ▼
+                      ┌─────────────┐       ┌─────────────┐
+                      │WrongQuestion│       │ Attachment  │
+                      ├─────────────┤       ├─────────────┤
+                      │ student_id │       │ biz_type    │
+                      │ question_id │       │ biz_id      │
+                      │ source_attempt_id │ │ file_url    │
+                      │ wrong_count │       └─────────────┘
+                      │ corrected   │
+                      └─────────────┘
 ```
 
 ---
 
-## 3. Tables
+## 3. Table Definitions
 
-### 3.1 User
+### 3.1 User (`users`)
 
-Stores all user accounts (students and administrators).
+**Purpose**: System users - both students and administrators
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | id | UUID | PK, default uuid() | Unique identifier |
+| username | VARCHAR(50) | UNIQUE, NOT NULL | Login username |
 | email | VARCHAR(255) | UNIQUE, NOT NULL | User email |
-| password | VARCHAR(255) | NOT NULL | Hashed password |
-| name | VARCHAR(255) | NOT NULL | Full name |
-| role | ENUM('ADMIN', 'STUDENT') | NOT NULL, default 'STUDENT' | User role |
-| student_id | VARCHAR(50) | NULLABLE | University student ID |
-| created_at | TIMESTAMP | NOT NULL, default now() | Creation timestamp |
-| updated_at | TIMESTAMP | NOT NULL | Last update timestamp |
+| passwordHash | VARCHAR(255) | NOT NULL | Bcrypt hashed password |
+| role | ENUM | NOT NULL, default STUDENT | ADMIN or STUDENT |
+| studentNo | VARCHAR(50) | NULLABLE | University student ID |
+| className | VARCHAR(100) | NULLABLE | Student class |
+| status | ENUM | NOT NULL, default ACTIVE | ACTIVE, INACTIVE, SUSPENDED |
+| createdAt | TIMESTAMP | NOT NULL | Creation timestamp |
+| updatedAt | TIMESTAMP | NOT NULL | Last update timestamp |
+| deletedAt | TIMESTAMP | NULLABLE | Soft delete timestamp |
 
-**Indexes:**
-- `idx_user_email` on email
-- `idx_user_role` on role
-- `idx_user_student_id` on student_id
+**Indexes**: email, username, role, studentNo, status
+
+**Relationships**:
+- Created questions (one-to-many with Question)
+- Created papers (one-to-many with Paper)
+- Exam attempts (one-to-many with ExamAttempt)
+- Wrong questions (one-to-many with WrongQuestion)
+- Sessions (one-to-many with Session)
 
 ---
 
-### 3.2 Category
+### 3.1.1 Session (`sessions`)
 
-Question categories for organization (subjects, chapters, topics).
+**Purpose**: Server-trusted session tokens for authentication
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | id | UUID | PK, default uuid() | Unique identifier |
-| name | VARCHAR(255) | NOT NULL | Category name |
-| description | TEXT | NULLABLE | Category description |
-| parent_id | UUID | FK, NULLABLE | Self-reference for hierarchy |
-| created_at | TIMESTAMP | NOT NULL, default now() | Creation timestamp |
+| token | VARCHAR(64) | UNIQUE, NOT NULL | Random 64-char session token |
+| userId | UUID | FK, NOT NULL | Reference to User |
+| expiresAt | TIMESTAMP | NOT NULL | Session expiration time |
+| createdAt | TIMESTAMP | NOT NULL | Creation timestamp |
 
-**Indexes:**
-- `idx_category_parent` on parent_id
+**Indexes**: userId, expiresAt
+
+**OnDelete Behavior**: Cascade - deleting user removes all sessions
+
+**Security**: Token is server-trusted; user data is resolved from DB on each request, not stored in cookie
 
 ---
 
-### 3.3 Question
+### 3.2 Subject (`subjects`)
 
-Question bank storing all exam questions.
+**Purpose**: Academic subjects/courses for organizing questions and papers
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | id | UUID | PK, default uuid() | Unique identifier |
-| category_id | UUID | FK, NOT NULL | Category reference |
-| type | ENUM('MCQ', 'TRUE_FALSE', 'FILL_BLANK', 'ESSAY') | NOT NULL | Question type |
-| content | TEXT | NOT NULL | Question text |
-| options | JSONB | NULLABLE | Options for MCQ/TF (array) |
-| correct_answer | TEXT | NOT NULL | Correct answer |
-| explanation | TEXT | NULLABLE | Answer explanation |
-| difficulty | ENUM('EASY', 'MEDIUM', 'HARD') | NOT NULL, default 'MEDIUM' | Difficulty level |
-| points | INTEGER | NOT NULL, default 1 | Point value |
-| image_url | VARCHAR(500) | NULLABLE | Optional image |
-| created_by | UUID | FK, NOT NULL | Admin who created |
-| created_at | TIMESTAMP | NOT NULL, default now() | Creation timestamp |
-| updated_at | TIMESTAMP | NOT NULL | Last update timestamp |
+| name | VARCHAR(100) | NOT NULL | Subject name |
+| code | VARCHAR(20) | UNIQUE, NULLABLE | Subject code (e.g., CS101) |
+| description | TEXT | NULLABLE | Subject description |
+| createdAt | TIMESTAMP | NOT NULL | Creation timestamp |
+| updatedAt | TIMESTAMP | NOT NULL | Last update timestamp |
 
-**Indexes:**
-- `idx_question_category` on category_id
-- `idx_question_type` on type
-- `idx_question_difficulty` on difficulty
+**Indexes**: name, code
+
+**Relationships**:
+- Questions (one-to-many)
+- Papers (one-to-many)
 
 ---
 
-### 3.4 Paper
+### 3.3 Question (`questions`)
 
-Exam paper configuration.
+**Purpose**: Question bank with various question types
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PK, default uuid() | Unique identifier |
+| subjectId | UUID | FK, NOT NULL | Reference to Subject |
+| type | ENUM | NOT NULL | SINGLE_CHOICE, MULTIPLE_CHOICE, TRUE_FALSE, FILL_BLANK, ESSAY |
+| stem | TEXT | NOT NULL | Question content |
+| optionsJson | JSON | NULLABLE | Options for choice questions |
+| answerJson | JSON | NOT NULL | Correct answer(s) |
+| analysis | TEXT | NULLABLE | Explanation after answer |
+| difficulty | ENUM | NOT NULL, default MEDIUM | EASY, MEDIUM, HARD |
+| tagsJson | JSON | NULLABLE | Tags for organization |
+| status | ENUM | NOT NULL, default DRAFT | DRAFT, PUBLISHED, ARCHIVED |
+| creatorId | UUID | FK, NOT NULL | Reference to User (admin) |
+| createdAt | TIMESTAMP | NOT NULL | Creation timestamp |
+| updatedAt | TIMESTAMP | NOT NULL | Last update timestamp |
+| deletedAt | TIMESTAMP | NULLABLE | Soft delete timestamp |
+
+**Indexes**: subjectId, type, difficulty, status, creatorId
+
+**JSON Fields**:
+- `optionsJson`: `["Option A", "Option B", "Option C", "Option D"]`
+- `answerJson`: `"A"` or `["A", "C"]` for multiple choice
+- `tagsJson`: `["algorithms", "sorting", "difficult"]`
+
+**Relationships**:
+- Subject (many-to-one)
+- Creator (many-to-one with User)
+- Paper questions (one-to-many)
+- Exam answers (one-to-many)
+- Wrong questions (one-to-many)
+
+---
+
+### 3.4 Paper (`papers`)
+
+**Purpose**: Exam paper configuration
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | id | UUID | PK, default uuid() | Unique identifier |
 | title | VARCHAR(255) | NOT NULL | Paper title |
+| subjectId | UUID | FK, NOT NULL | Reference to Subject |
 | description | TEXT | NULLABLE | Paper description |
-| duration | INTEGER | NOT NULL | Duration in minutes |
-| passing_score | INTEGER | NOT NULL, default 60 | Passing percentage |
-| randomize_questions | BOOLEAN | NOT NULL, default false | Randomize order |
-| randomize_options | BOOLEAN | NOT NULL, default false | Randomize options |
-| status | ENUM('DRAFT', 'PUBLISHED', 'ARCHIVED') | NOT NULL, default 'DRAFT' | Paper status |
-| published_at | TIMESTAMP | NULLABLE | Publication timestamp |
-| start_time | TIMESTAMP | NULLABLE | Exam start window |
-| end_time | TIMESTAMP | NULLABLE | Exam end window |
-| created_by | UUID | FK, NOT NULL | Admin who created |
-| created_at | TIMESTAMP | NOT NULL, default now() | Creation timestamp |
-| updated_at | TIMESTAMP | NOT NULL | Last update timestamp |
+| durationMinutes | INT | NOT NULL, default 90 | Exam duration in minutes |
+| totalScore | INT | NOT NULL, default 100 | Total possible score |
+| passingScore | INT | NOT NULL, default 60 | Passing score threshold |
+| status | ENUM | NOT NULL, default DRAFT | DRAFT, PUBLISHED, ARCHIVED |
+| publishedAt | TIMESTAMP | NULLABLE | Publication timestamp |
+| createdBy | UUID | FK, NOT NULL | Reference to User (admin) |
+| createdAt | TIMESTAMP | NOT NULL | Creation timestamp |
+| updatedAt | TIMESTAMP | NOT NULL | Last update timestamp |
+| deletedAt | TIMESTAMP | NULLABLE | Soft delete timestamp |
 
-**Indexes:**
-- `idx_paper_status` on status
-- `idx_paper_created_by` on created_by
+**Indexes**: subjectId, status, createdBy, publishedAt
 
----
-
-### 3.5 PaperQuestion
-
-Junction table linking papers to questions with ordering.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| paper_id | UUID | FK, NOT NULL | Paper reference |
-| question_id | UUID | FK, NOT NULL | Question reference |
-| order_index | INTEGER | NOT NULL | Display order |
-| points | INTEGER | NOT NULL | Point value for this question |
-
-**Primary Key:** (paper_id, question_id)
+**Relationships**:
+- Subject (many-to-one)
+- Creator (many-to-one with User)
+- Paper questions (one-to-many)
+- Exam attempts (one-to-many)
 
 ---
 
-### 3.6 Result
+### 3.5 PaperQuestion (`paper_questions`)
 
-Student exam results.
+**Purpose**: Junction table linking papers to questions with scoring
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | id | UUID | PK, default uuid() | Unique identifier |
-| student_id | UUID | FK, NOT NULL | Student reference |
-| paper_id | UUID | FK, NOT NULL | Paper reference |
-| score | INTEGER | NOT NULL | Total score |
-| max_score | INTEGER | NOT NULL | Maximum possible score |
-| percentage | DECIMAL(5,2) | NOT NULL | Score percentage |
-| passed | BOOLEAN | NOT NULL | Pass/fail status |
-| started_at | TIMESTAMP | NOT NULL | Exam start time |
-| submitted_at | TIMESTAMP | NOT NULL | Submission time |
-| time_taken | INTEGER | NOT NULL | Time spent in seconds |
-| answers | JSONB | NOT NULL | Student answers |
-| ip_address | VARCHAR(45) | NULLABLE | Submission IP |
-| created_at | TIMESTAMP | NOT NULL, default now() | Creation timestamp |
+| paperId | UUID | FK, NOT NULL | Reference to Paper |
+| questionId | UUID | FK, NOT NULL | Reference to Question |
+| score | INT | NOT NULL, default 5 | Points for this question |
+| sortOrder | INT | NOT NULL, default 0 | Display order in paper |
+| createdAt | TIMESTAMP | NOT NULL | Creation timestamp |
 
-**Indexes:**
-- `idx_result_student` on student_id
-- `idx_result_paper` on paper_id
+**Constraints**: UNIQUE(paperId, questionId)
+
+**Indexes**: paperId, questionId
+
+**OnDelete Behavior**: 
+- Deleting Paper cascades to remove PaperQuestions (Cascade)
+- Deleting Question does NOT cascade - PaperQuestion records remain (orphan prevention requires business logic)
 
 ---
 
-### 3.7 Session
+### 3.6 ExamAttempt (`exam_attempts`)
 
-Active user sessions for security tracking.
+**Purpose**: Student exam attempt record
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | id | UUID | PK, default uuid() | Unique identifier |
-| user_id | UUID | FK, NOT NULL | User reference |
-| token | VARCHAR(500) | UNIQUE, NOT NULL | JWT token |
-| expires_at | TIMESTAMP | NOT NULL | Expiration timestamp |
-| created_at | TIMESTAMP | NOT NULL, default now() | Creation timestamp |
+| paperId | UUID | FK, NOT NULL | Reference to Paper |
+| studentId | UUID | FK, NOT NULL | Reference to User (student) |
+| attemptNo | INT | NOT NULL, default 1 | 1st, 2nd, 3rd attempt |
+| status | ENUM | NOT NULL | NOT_STARTED, IN_PROGRESS, SUBMITTED, GRADED, EXPIRED |
+| startTime | TIMESTAMP | NULLABLE | When student started exam |
+| submitTime | TIMESTAMP | NULLABLE | When student submitted |
+| totalScore | INT | NULLABLE | Final score after grading |
+| autoGradedAt | TIMESTAMP | NULLABLE | When auto-grading completed |
+| ipAddress | VARCHAR(45) | NULLABLE | Student IP for audit |
+| createdAt | TIMESTAMP | NOT NULL | Creation timestamp |
+| updatedAt | TIMESTAMP | NOT NULL | Last update timestamp |
 
-**Indexes:**
-- `idx_session_token` on token
-- `idx_session_user` on user_id
+**Constraints**: UNIQUE(paperId, studentId, attemptNo)
 
----
+**Multi-Attempt Policy**:
+- Students can take the same paper multiple times
+- `attemptNo` starts at 1 and increments for each attempt
+- Unique constraint allows multiple attempts: (paperId, studentId, attemptNo)
+- Queries can retrieve: latest attempt, best score, attempt history
 
-## 4. Relationships
+**Indexes**: paperId, studentId, status
 
-| Relationship | Type | Description |
-|--------------|------|-------------|
-| User → Paper | One-to-Many | Admin can create many papers |
-| User → Question | One-to-Many | Admin can create many questions |
-| User → Result | One-to-Many | Student has many results |
-| Category → Question | One-to-Many | Category has many questions |
-| Category → Category | One-to-Many (Self) | Categories can have subcategories |
-| Paper → PaperQuestion | One-to-Many | Paper has many questions |
-| Question → PaperQuestion | One-to-Many | Question appears in many papers |
-| Paper → Result | One-to-Many | Paper has many results |
-
----
-
-## 5. Data Integrity Rules
-
-1. **Question Deletion**: Cannot delete if used in published papers
-2. **Paper Deletion**: Cannot delete if has results
-3. **User Deletion**: Soft delete (set inactive) instead of hard delete
-4. **Result Modification**: Results cannot be modified after submission
+**Relationships**:
+- Paper (many-to-one)
+- Student (many-to-one with User)
+- Answers (one-to-many)
+- Wrong questions (one-to-many)
 
 ---
 
-## 6. Query Optimization Notes
+### 3.7 ExamAnswer (`exam_answers`)
 
-### Frequently Accessed Data
-- User lookups by email: indexed
-- Question lookups by category: indexed
-- Result lookups by student: indexed
-- Paper lookups by status: indexed
+**Purpose**: Student's answer for each question in an attempt
 
-### Pagination
-- All list endpoints must use cursor-based or offset pagination
-- Maximum 100 items per page
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PK, default uuid() | Unique identifier |
+| attemptId | UUID | FK, NOT NULL | Reference to ExamAttempt |
+| questionId | UUID | FK, NOT NULL | Reference to Question |
+| studentAnswerJson | JSON | NOT NULL | Student's answer as JSON |
+| isCorrect | BOOLEAN | NULLABLE | Correctness (null until graded) |
+| score | INT | NULLABLE | Points earned |
+| reviewedAt | TIMESTAMP | NULLABLE | Manual review timestamp |
+| createdAt | TIMESTAMP | NOT NULL | Creation timestamp |
+| updatedAt | TIMESTAMP | NOT NULL | Last update timestamp |
 
-### JSON Usage
-- `options` field uses JSONB for flexible MCQ options
-- `answers` field uses JSONB for flexible answer storage
+**Constraints**: UNIQUE(attemptId, questionId) - One answer per question per attempt
+
+**Indexes**: attemptId, questionId
+
+**OnDelete Behavior**: Cascade - answers deleted when attempt deleted
+
+**Grading Logic**:
+- Objective questions (SINGLE_CHOICE, MULTIPLE_CHOICE, TRUE_FALSE, FILL_BLANK): Auto-graded
+- ESSAY: Manual review required (reviewedAt set)
+
+**Relationships**:
+- Attempt (many-to-one)
+- Question (many-to-one)
+
+---
+
+### 3.8 WrongQuestion (`wrong_questions`)
+
+**Purpose**: Wrong question book - accumulated mistakes
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PK, default uuid() | Unique identifier |
+| studentId | UUID | FK, NOT NULL | Reference to User (student) |
+| questionId | UUID | FK, NOT NULL | Reference to Question |
+| sourceAttemptId | UUID | NULLABLE | Reference to ExamAttempt |
+| wrongCount | INT | NOT NULL, default 1 | Accumulated mistake count |
+| lastWrongAt | TIMESTAMP | NOT NULL | Last time got wrong |
+| corrected | BOOLEAN | NOT NULL, default false | Got correct in later attempt |
+| note | TEXT | NULLABLE | Student's personal note |
+| createdAt | TIMESTAMP | NOT NULL | Creation timestamp |
+| updatedAt | TIMESTAMP | NOT NULL | Last update timestamp |
+
+**Constraints**: UNIQUE(studentId, questionId) - One record per student-question pair
+
+**Indexes**: studentId, questionId
+
+**Design Rationale**:
+- `sourceAttemptId` is nullable to support future practice mode
+- When student answers incorrectly, wrongCount increments
+- When student gets it correct later, `corrected` flag is set to true
+- Both wrongCount and lastWrongAt are updated on each wrong attempt
+
+**Accumulation Logic**:
+1. Student answers question wrong in attempt
+2. Upsert WrongQuestion: increment wrongCount, update lastWrongAt
+3. If student later answers correctly, set corrected = true
+4. Query can filter by corrected = false for "still wrong" questions
+
+---
+
+### 3.9 Attachment (`attachments`)
+
+**Purpose**: File attachments for questions, papers, or results
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PK, default uuid() | Unique identifier |
+| bizType | ENUM | NOT NULL | QUESTION, PAPER, RESULT |
+| bizId | STRING | NOT NULL | ID of associated record |
+| fileName | VARCHAR(255) | NOT NULL | Original file name |
+| fileUrl | TEXT | NOT NULL | Storage URL (S3/local) |
+| fileSize | INT | NULLABLE | File size in bytes |
+| mimeType | VARCHAR(100) | NULLABLE | MIME type |
+| uploadedBy | UUID | FK, NOT NULL | Reference to User |
+| createdAt | TIMESTAMP | NOT NULL | Creation timestamp |
+
+**Indexes**: (bizType, bizId), uploadedBy
+
+---
+
+### 3.10 AuditLog (`audit_logs`)
+
+**Purpose**: Admin action audit trail
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PK, default uuid() | Unique identifier |
+| userId | UUID | FK, NOT NULL | Reference to User (admin) |
+| action | VARCHAR(50) | NOT NULL | CREATE, UPDATE, DELETE, LOGIN, etc. |
+| module | VARCHAR(50) | NOT NULL | QUESTION, PAPER, USER, etc. |
+| targetType | VARCHAR(50) | NULLABLE | Table name affected |
+| targetId | UUID | NULLABLE | ID of affected record |
+| detailJson | JSON | NULLABLE | JSON details of action |
+| ipAddress | VARCHAR(45) | NULLABLE | Admin IP for audit |
+| createdAt | TIMESTAMP | NOT NULL | Creation timestamp |
+
+**Indexes**: userId, action, module, (targetType, targetId), createdAt
+
+---
+
+## 4. Indexing Strategy
+
+### Query-Focused Indexes
+
+| Table | Index | Purpose |
+|-------|-------|---------|
+| User | email, username | Login queries |
+| User | role, status | User filtering |
+| Question | subjectId, status | Question bank queries |
+| Question | type, difficulty | Filtering questions |
+| Paper | subjectId, status | Paper list queries |
+| Paper | publishedAt | Active exams |
+| ExamAttempt | studentId, status | Student exam status |
+| ExamAnswer | attemptId | Fetch attempt answers |
+| WrongQuestion | studentId | Student's wrong questions |
+
+---
+
+## 5. Soft Delete Strategy
+
+Tables with soft delete support:
+- User (`deletedAt`)
+- Question (`deletedAt`)
+- Paper (`deletedAt`)
+
+**Implementation**:
+- Default queries should filter `deletedAt: null`
+- Admin views can optionally include deleted records
+- Related data (questions in papers) cascade appropriately
+
+---
+
+## 6. OnDelete Behavior Summary
+
+| Relation | OnDelete | Description |
+|----------|----------|-------------|
+| Question → creator | Default (None) | Creator cannot be deleted if questions exist |
+| Question → subject | Default (None) | Subject cannot be deleted if questions exist |
+| Paper → creator | Default (None) | Creator cannot be deleted if papers exist |
+| Paper → subject | Default (None) | Subject cannot be deleted if papers exist |
+| PaperQuestion → paper | **Cascade** | Deleting paper removes all paper questions |
+| PaperQuestion → question | **None** | Deleting question does NOT cascade (orphans remain - business logic should prevent) |
+| ExamAnswer → attempt | **Cascade** | Deleting attempt cascades to answers |
+| ExamAnswer → question | None | Deleting question does NOT cascade |
+| WrongQuestion → sourceAttempt | **None** (nullable) | Wrong question persists even if attempt deleted |
+| Attachment → uploader | Default (None) | Cannot delete user if attachments exist |
+| AuditLog → user | Default (None) | Cannot delete user if audit logs exist |
+
+---
+
+## 7. Key Constraints
+
+1. **Unique constraints**:
+   - User: username, email
+   - Subject: code
+   - PaperQuestion: (paperId, questionId)
+   - ExamAnswer: (attemptId, questionId)
+   - WrongQuestion: (studentId, questionId)
+   - ExamAttempt: (paperId, studentId, attemptNo)
+
+2. **Referential integrity**:
+   - Paper → PaperQuestion: Cascade (deleting paper removes questions)
+   - ExamAttempt → ExamAnswer: Cascade (deleting attempt removes answers)
+   - Question deletion does NOT cascade - handled by business logic
+
+3. **Data integrity**:
+   - Enums restrict valid values
+   - Timestamps auto-managed by Prisma
+
+---
+
+## 8. Migration Commands
+
+```bash
+# Generate Prisma client
+npx prisma generate
+
+# Create migration
+npx prisma migrate dev --name init
+
+# Push schema to database
+npx prisma db push
+
+# View database
+npx prisma studio
+```
+
+---
+
+## 9. Prisma 7 Configuration
+
+This project uses **Prisma 7** with the new configuration approach:
+
+- **Database URL**: Configured in `prisma.config.ts`, not in schema.prisma
+- **Environment variable**: `DATABASE_URL` must be set in `.env`
+- **Schema file**: Does NOT contain `url = env("DATABASE_URL")` (Prisma 7 requirement)
+
+Example `.env`:
+```env
+DATABASE_URL="postgresql://user:password@localhost:5432/exam_system"
+```
+
+---
+
+## 10. Future Extension Notes
+
+| Extension | Description |
+|-----------|-------------|
+| Multi-tenancy | Add `tenantId` to all models |
+| Anti-cheat | Add `browserFingerprint`, `tabSwitchCount` to ExamAttempt |
+| Manual grading | Add `graderId`, `gradingComment` to ExamAnswer |
+| Analytics | Create separate aggregation tables |
+| Notifications | Add Notification model |
+| Bookmarks | Add Bookmark model for saved questions |
+| Practice mode | Use nullable `sourceAttemptId` in WrongQuestion |

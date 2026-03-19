@@ -2,24 +2,17 @@
 
 ## 1. Architecture Overview
 
-This application follows a **monolithic architecture** using Next.js App Router with a relational database. The architecture is designed for simplicity while maintaining scalability for university-scale deployments.
+This application follows a **monolithic architecture** using Next.js App Router with a relational database.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        Client Layer                         │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │   Browser   │  │    Mobile   │  │   Tablet/Desktop   │  │
-│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
 └────────────────────────────┬────────────────────────────────┘
                              │ HTTPS
 ┌────────────────────────────▼────────────────────────────────┐
 │                      Application Layer                       │
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │                   Next.js App Server                    │ │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐ │ │
-│  │  │   API    │  │  Pages   │  │Components│  │  Hooks   │ │ │
-│  │  │ Routes   │  │ (RSC)    │  │          │  │          │ │ │
-│  │  └──────────┘  └──────────┘  └──────────┘  └──────────┘ │ │
 │  └────────────────────────────────────────────────────────┘ │
 └────────────────────────────┬────────────────────────────────┘
                              │
@@ -33,9 +26,8 @@ This application follows a **monolithic architecture** using Next.js App Router 
 
 ---
 
-## 2. Technology Stack
+## 2. Technology Stack (Current)
 
-### Frontend
 | Technology | Version | Purpose |
 |------------|---------|---------|
 | Next.js | 16.x | Framework, SSR, Routing |
@@ -43,244 +35,251 @@ This application follows a **monolithic architecture** using Next.js App Router 
 | TypeScript | 5.x | Type Safety |
 | Tailwind CSS | 4.x | Styling |
 | shadcn/ui | latest | Component Library |
-
-### Backend
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| Next.js API | - | API Routes |
-| Prisma | 6.x | ORM |
+| Prisma | 7.x | ORM (configured) |
 | PostgreSQL | 14+ | Database |
-
-### Development
-| Technology | Purpose |
-|------------|---------|
-| ESLint | Code linting |
-| Prettier | Code formatting |
-| Husky | Git hooks |
 
 ---
 
-## 3. Application Structure
+## 2.1 Implemented Modules
+
+| Module | Status | Description |
+|--------|--------|-------------|
+| Authentication | ✅ | Session-based with database tokens |
+| RBAC | ✅ | Admin/Student role-based access |
+| Question Bank | ✅ | CRUD with soft delete |
+| Paper Management | ✅ | CRUD, publish/archive workflow, question selection |
+| Exam Taking | ✅ | Full flow: start, continue, submit, auto-grade |
+| Wrong Book | ✅ | Wrong question tracking and review |
+
+---
+
+## 3. Project Structure (Current)
+
+### 3.1 Root Structure
 
 ```
 src/
-├── app/                      # Next.js App Router
-│   ├── (auth)/              # Auth-related pages
-│   │   ├── login/
-│   │   └── register/
-│   ├── (dashboard)/         # Student dashboard
-│   │   ├── dashboard/
-│   │   ├── papers/
-│   │   ├── wrong-book/
-│   │   └── history/
-│   ├── (admin)/             # Admin portal
-│   │   ├── admin/
-│   │   ├── questions/
-│   │   ├── papers/
-│   │   └── students/
-│   ├── api/                 # API routes
-│   │   ├── auth/
-│   │   ├── questions/
-│   │   ├── papers/
-│   │   └── results/
-│   ├── layout.tsx
-│   ├── page.tsx
-│   └── globals.css
+├── app/                      # Next.js App Router pages
+├── components/               # Reusable UI components
+│   └── ui/                   # shadcn/ui base components
+├── features/                 # Feature modules (future)
+├── hooks/                    # Custom React hooks
+├── lib/                      # Utilities
+│   ├── auth/                 # Authentication
+│   ├── validators/           # Input validation
+│   ├── rbac.ts              # Role-based access
+│   └── prisma.ts            # Prisma client
+├── services/                 # API services (future)
+├── repositories/             # Data access layer
+├── types/                    # TypeScript types
+├── constants/                # Application constants
+└── prisma/                  # Database schema
+```
+
+### 3.2 App Directory (Current - Flat Structure)
+
+The current implementation uses a flat route structure with modular organization.
+
+```
+src/app/
+├── page.tsx                  # Homepage (landing)
+├── layout.tsx               # Root layout
+├── globals.css
 │
-├── components/
-│   ├── ui/                  # shadcn/ui components
-│   │   ├── button.tsx
-│   │   ├── card.tsx
-│   │   ├── input.tsx
-│   │   └── ...
-│   ├── forms/              # Form components
-│   ├── layout/             # Layout components
-│   │   ├── navbar.tsx
-│   │   ├── sidebar.tsx
-│   │   └── footer.tsx
-│   └── exam/               # Exam-specific components
-│       ├── question-card.tsx
-│       ├── timer.tsx
-│       └── navigation.tsx
+├── login/
+│   ├── page.tsx             # Login page
+│   ├── LoginForm.tsx        # Login form component
+│   └── actions.ts           # Login server actions
 │
-├── lib/                     # Utility functions
-│   ├── db.ts              # Prisma client
-│   ├── auth.ts            # Auth utilities
-│   ├── utils.ts           # General utilities
-│   └── validations.ts    # Zod schemas
+├── logout/
+│   └── actions.ts           # Logout server actions
 │
-├── prisma/
-│   ├── schema.prisma      # Database schema
-│   └── migrations/        # Database migrations
+├── dashboard/
+│   └── page.tsx             # Student dashboard
 │
-└── types/                  # TypeScript types
-    ├── question.ts
-    ├── user.ts
-    └── exam.ts
+├── papers/
+│   └── page.tsx             # Available exam papers list
+│
+├── exam/
+│   └── [paperId]/
+│       ├── page.tsx         # Exam start/continue page
+│       └── take/
+│           └── page.tsx    # Exam taking page with client component
+│
+├── exam/
+│   └── [attemptId]/
+│       └── result/
+│           └── page.tsx    # Exam result page with question review
+│
+├── wrong-book/
+│   ├── page.tsx            # Wrong questions list with subject filter
+│   └── actions.ts          # Wrong question fetch actions
+│
+└── admin/
+    ├── page.tsx             # Admin overview
+    ├── questions/
+    │   ├── page.tsx         # Question list
+    │   ├── actions.ts       # Question CRUD actions
+    │   ├── new/
+    │   │   └── page.tsx     # Create question
+    │   ├── [id]/
+    │   │   └── page.tsx     # Edit question
+    │   ├── question-filter-form.tsx
+    │   ├── question-list.tsx
+    │   ├── question-form.tsx
+    │   └── question-edit-form.tsx
+    ├── papers/
+    │   └── page.tsx         # Paper management
+    └── students/
+        └── page.tsx         # Student management
+```
+
+### 3.3 Route Groups (Future Refactoring)
+
+The following route group structure is planned for future implementation to better separate portals:
+
+```
+src/app/
+├── (auth)/                   # [FUTURE] Auth routes
+│   ├── login/
+│   └── register/
+│
+├── (student)/                # [FUTURE] Student portal
+│   ├── layout.tsx           # Student-specific layout
+│   ├── dashboard/
+│   ├── papers/
+│   └── wrong-book/
+│
+└── (admin)/                 # [FUTURE] Admin portal
+    ├── layout.tsx           # Admin-specific layout
+    ├── admin/
+    ├── questions/
+    ├── papers/
+    └── students/
 ```
 
 ---
 
-## 4. API Design Pattern
+## 3.1 Question Module Architecture (Implemented)
 
-### RESTful API Structure
+The question module follows a layered architecture within the Next.js App Router:
 
 ```
-/api
-├── /auth
-│   ├── POST   /login          # User login
-│   ├── POST   /logout         # User logout
-│   ├── POST   /refresh       # Refresh token
-│   └── POST   /register      # Student registration
+src/app/admin/questions/
+├── page.tsx                    # Server Component - Question list
+├── actions.ts                  # Server Actions - CRUD operations
+├── question-form.tsx          # Client Component - Create form
+├── question-edit-form.tsx     # Client Component - Edit form
+├── question-list.tsx          # Client Component - List display
+├── question-filter-form.tsx   # Client Component - Filters
+├── new/
+│   └── page.tsx              # Server Component - Create page
+└── [id]/
+    └── page.tsx               # Server Component - Edit page
+```
+
+### Layer Flow:
+1. **Page Layer** (`page.tsx`) - Server Components handle routing and data fetching
+2. **Actions Layer** (`actions.ts`) - Server Actions bridge UI to business logic
+3. **Validation Layer** (`validators/`) - Input validation
+4. **Repository Layer** (`repositories/`) - Data access via Prisma
+5. **Database Layer** - PostgreSQL with Prisma ORM
+
+### Key Files:
+| File | Responsibility |
+|------|---------------|
+| `actions.ts` | `fetchQuestions`, `createQuestionAction`, `updateQuestionAction`, `deleteQuestionAction` |
+| `question.validator.ts` | `validateCreateQuestion`, `validateUpdateQuestion` |
+| `question.repository.ts` | CRUD operations, soft delete, filtering |
+
+**Note:** Services layer (`src/services/`) is currently a placeholder. The actions layer currently serves as the service layer for the question module.
+
+---
+
+## 4. Component Organization
+
+### 4.1 src/components/ - Reusable UI
+
+```
+src/components/
+├── ui/                       # shadcn/ui components
+│   ├── button.tsx
+│   ├── card.tsx
+│   └── input.tsx
 │
-├── /questions
-│   ├── GET    /               # List questions
-│   ├── POST   /               # Create question
-│   ├── GET    /[id]           # Get question
-│   ├── PUT    /[id]           # Update question
-│   └── DELETE /[id]           # Delete question
-│
-├── /papers
-│   ├── GET    /               # List papers
-│   ├── POST   /               # Create paper
-│   ├── GET    /[id]           # Get paper
-│   ├── PUT    /[id]           # Update paper
-│   ├── DELETE /[id]           # Delete paper
-│   └── GET    /[id]/questions # Get paper questions
-│
-├── /exams
-│   ├── GET    /available      # Available exams
-│   ├── POST   /[id]/start     # Start exam
-│   ├── POST   /[id]/submit    # Submit exam
-│   └── GET    /[id]/result    # Get result
-│
-├── /results
-│   ├── GET    /               # List results
-│   ├── GET    /[id]           # Get result
-│   └── GET    /student/[id]   # Student results
-│
-└── /users
-    ├── GET    /               # List users (admin)
-    ├── GET    /[id]           # Get user
-    ├── PUT    /[id]           # Update user
-    └── DELETE /[id]           # Delete user
+└── layout/                   # [FUTURE] Layout components
+    ├── navbar.tsx
+    └── sidebar.tsx
+```
+
+### 4.2 src/features/ - Domain Modules
+
+Feature modules contain domain-specific components, hooks, and types.
+
+```
+src/features/
+├── auth/                     # [FUTURE] Auth feature
+├── exam/                     # [FUTURE] Exam taking feature
+├── questions/                # [FUTURE] Question management
+├── papers/                   # [FUTURE] Paper management
+└── results/                  # [FUTURE] Results feature
 ```
 
 ---
 
-## 5. Data Flow
+## 5. Current Development Stage
 
-### Exam Submission Flow
-```
-1. User submits answers
-2. Frontend validates answers
-3. API receives POST /api/exams/[id]/submit
-4. Server authenticates token
-5. Server fetches paper and correct answers
-6. Server grades each question
-7. Server calculates total score
-8. Server saves result to database
-9. Server returns result to client
-10. Client displays results page
-```
+### MVP Complete
+- ✅ All core features implemented
+- ✅ Student portal: papers, exam taking, results, wrong book
+- ✅ Admin portal: questions, papers, students management
+- ✅ Authentication and RBAC
+- ✅ Database schema with Prisma ORM
 
 ---
 
-## 6. Security Architecture
+## 6. API Design (Server Actions)
 
-### Authentication Flow
+This application uses **Next.js Server Actions** instead of traditional REST APIs. All data operations are performed through server-side functions called directly from components.
+
 ```
-┌──────────┐     ┌───────────┐     ┌────────────┐
-│  Client  │────▶│  Next.js  │────▶│ Database   │
-│          │◀────│  API      │◀────│ (Postgres) │
-└──────────┘     └───────────┘     └────────────┘
-     │               │
-     │               ▼
-     │         ┌───────────┐
-     │         │   JWT     │
-     │         │  Validate │
-     │         └───────────┘
-     ▼
-┌──────────┐
-│  Store   │
-│  Token   │
-└──────────┘
+src/app/exam/
+├── actions.ts               # Exam-related server actions
+│
+src/app/wrong-book/
+├── actions.ts               # Wrong question server actions
+│
+src/app/admin/questions/
+├── actions.ts               # Question CRUD server actions
 ```
 
-### Security Layers
-1. **Transport**: HTTPS only
-2. **Authentication**: JWT with short expiry
-3. **Authorization**: Role-based middleware
-4. **Data**: Prisma parameterized queries
-5. **Validation**: Zod schemas on all inputs
+### Server Action Patterns:
+- Direct function calls from Client Components
+- Type-safe input validation via Zod
+- Repository pattern for data access
 
 ---
 
-## 7. Deployment Architecture
-
-### Development
-- Local development server
-- Local PostgreSQL database
-
-### Production (Recommended)
-- **Hosting**: Vercel / AWS EC2 / DigitalOcean
-- **Database**: PostgreSQL (managed: RDS, Supabase, Neon)
-- **Storage**: S3 for media files
-- **CDN**: CloudFront for static assets
-
----
-
-## 8. Scalability Considerations
-
-### Horizontal Scaling
-- Stateless API routes
-- Session data in database
-- CDN for static assets
-
-### Database Optimization
-- Indexes on frequently queried fields
-- Pagination for list endpoints
-- Connection pooling (Prisma)
-
-### Caching Strategy
-- React Query for client caching
-- Server-side caching for static data
-- Redis for session storage (optional)
-
----
-
-## 9. Environment Configuration
+## 7. Environment Configuration
 
 ```
 .env
-├── DATABASE_URL          # PostgreSQL connection
-├── JWT_SECRET            # JWT signing key
-├── JWT_EXPIRES_IN        # Token expiry time
+├── DATABASE_URL          # PostgreSQL connection string
 ├── NODE_ENV              # development/production
-└── NEXT_PUBLIC_APP_URL   # App URL for CORS
+└── NEXT_PUBLIC_APP_URL   # App URL (optional)
 ```
 
 ---
 
-## 10. Error Handling
+## 8. Error Handling (Planned)
 
-### Error Response Format
 ```typescript
 {
   success: false,
   error: {
-    code: "ERROR_CODE",
-    message: "Human readable message",
+    code: string,
+    message: string,
     details?: Record<string, unknown>
   }
 }
 ```
-
-### Error Codes
-| Code | Description |
-|------|-------------|
-| UNAUTHORIZED | Invalid or missing token |
-| FORBIDDEN | Insufficient permissions |
-| NOT_FOUND | Resource not found |
-| VALIDATION_ERROR | Invalid input data |
-| INTERNAL_ERROR | Server error |

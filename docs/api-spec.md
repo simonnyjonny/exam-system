@@ -1,471 +1,374 @@
 # API Specification
 
-## 1. API Overview
+> **Note**: This application uses **Next.js Server Actions** instead of traditional REST APIs. The specification below describes the actual implemented behavior through server functions, not HTTP endpoints.
 
-All API endpoints follow RESTful conventions. Communication is via JSON over HTTPS.
+---
 
-### Base URL
-```
-Production: https://api.examsystem.com
-Development: http://localhost:3000/api
-```
+## 1. Implementation Approach
 
-### Authentication
-All protected endpoints require a Bearer token in the Authorization header:
-```
-Authorization: Bearer <jwt_token>
-```
+This application uses **Server Actions** for all data operations:
+- Direct function calls from Client Components
+- Type-safe parameters with Zod validation
+- Repository pattern for data access layer
+
+### Base Files:
+- `src/app/exam/actions.ts` - Exam flow actions
+- `src/app/wrong-book/actions.ts` - Wrong question actions
+- `src/app/admin/questions/actions.ts` - Question CRUD actions
+- `src/repositories/exam.repository.ts` - Exam data access
 
 ---
 
 ## 2. Response Format
 
-### Success Response
+### ActionResult<T>
 ```typescript
-{
-  success: true,
-  data: T,
-  message?: string
-}
-```
-
-### Error Response
-```typescript
-{
-  success: false,
-  error: {
-    code: string,
-    message: string,
-    details?: Record<string, unknown>
-  }
-}
-```
-
-### Paginated Response
-```typescript
-{
-  success: true,
-  data: T[],
-  pagination: {
-    page: number,
-    limit: number,
-    total: number,
-    totalPages: number
-  }
+interface ActionResult<T = void> {
+  success: boolean;
+  error?: string;
+  data?: T;
+  errors?: { field: string; message: string }[];
 }
 ```
 
 ---
 
-## 3. Endpoints
+## 3. Server Actions
 
-### 3.1 Authentication
+### 3.1 Exam Flow (Student)
 
-#### POST /api/auth/login
-Login with email and password.
+#### fetchAvailablePapers(filter?)
+Get list of available exam papers for student.
 
-**Request:**
+**Parameters:**
 ```typescript
-{
-  email: string,
-  password: string
+interface ExamFilter {
+  subjectId?: string;
+  search?: string;
 }
 ```
 
-**Response:**
+**Returns:**
 ```typescript
-{
-  success: true,
-  data: {
-    user: {
-      id: string,
-      email: string,
-      name: string,
-      role: "ADMIN" | "STUDENT"
-    },
-    accessToken: string,
-    expiresIn: number
-  }
-}
+{ papers: ExamPaper[]; total: number }
 ```
 
 ---
 
-#### POST /api/auth/register
-Register a new student account.
+#### startExamAction(paperId)
+Start or continue an exam attempt.
 
-**Request:**
+**Parameters:**
 ```typescript
-{
-  email: string,
-  password: string,
-  name: string,
-  studentId: string
-}
+paperId: string
 ```
 
----
-
-#### POST /api/auth/logout
-Logout and invalidate token.
-
-**Headers:** Authorization required
-
-**Response:**
+**Returns:**
 ```typescript
-{ success: true }
-```
-
----
-
-### 3.2 Questions
-
-#### GET /api/questions
-Get all questions (admin only).
-
-**Query Parameters:**
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| page | number | Page number (default: 1) |
-| limit | number | Items per page (default: 20) |
-| category | uuid | Filter by category |
-| type | string | Filter by type |
-| difficulty | string | Filter by difficulty |
-| search | string | Search in content |
-
-**Response:**
-```typescript
-{
-  success: true,
-  data: Question[],
-  pagination: { page, limit, total, totalPages }
-}
-```
-
----
-
-#### POST /api/questions
-Create a new question (admin only).
-
-**Request:**
-```typescript
-{
-  categoryId: string,
-  type: "MCQ" | "TRUE_FALSE" | "FILL_BLANK" | "ESSAY",
-  content: string,
-  options?: string[],        // For MCQ/TF
-  correctAnswer: string,
-  explanation?: string,
-  difficulty: "EASY" | "MEDIUM" | "HARD",
-  points: number,
-  imageUrl?: string
-}
-```
-
----
-
-#### GET /api/questions/[id]
-Get a specific question.
-
-**Response:**
-```typescript
-{
-  success: true,
-  data: Question
-}
-```
-
----
-
-#### PUT /api/questions/[id]
-Update a question (admin only).
-
----
-
-#### DELETE /api/questions/[id]
-Delete a question (admin only).
-
----
-
-### 3.3 Papers
-
-#### GET /api/papers
-Get all papers (admin) or available papers (student).
-
-**Query Parameters:**
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| status | string | Filter by status |
-| page | number | Page number |
-| limit | number | Items per page |
-
----
-
-#### POST /api/papers
-Create a new paper (admin only).
-
-**Request:**
-```typescript
-{
-  title: string,
-  description?: string,
-  duration: number,
-  passingScore: number,
-  randomizeQuestions: boolean,
-  randomizeOptions: boolean,
-  startTime?: string,
-  endTime?: string,
-  questions: {
-    questionId: string,
-    orderIndex: number,
-    points: number
-  }[]
-}
-```
-
----
-
-#### GET /api/papers/[id]
-Get paper details.
-
-**Response:**
-```typescript
+ActionResult<ExamAttempt>
 {
   success: true,
   data: {
     id: string,
-    title: string,
-    description: string,
-    duration: number,
-    passingScore: number,
-    status: string,
-    questions: {
-      id: string,
-      content: string,
-      type: string,
-      points: number
-    }[]
+    paperId: string,
+    studentId: string,
+    attemptNo: number,
+    status: 'NOT_STARTED' | 'IN_PROGRESS' | 'SUBMITTED' | 'GRADED',
+    startTime: Date | null
   }
 }
 ```
 
----
-
-#### PUT /api/papers/[id]
-Update paper (admin only).
-
----
-
-#### DELETE /api/papers/[id]
-Delete paper (admin only).
+**Behavior:**
+- Checks for existing IN_PROGRESS attempt
+- If exists, returns existing attempt (continue exam)
+- If not, creates new attempt and starts it
 
 ---
 
-#### POST /api/papers/[id]/publish
-Publish a paper (admin only).
+#### fetchQuestionsForExam(paperId)
+Get questions for exam taking (without correct answers).
 
----
-
-### 3.4 Exams
-
-#### GET /api/exams/available
-Get available exams for current student.
-
----
-
-#### POST /api/exams/[id]/start
-Start an exam.
-
-**Response:**
+**Parameters:**
 ```typescript
-{
-  success: true,
-  data: {
-    examId: string,
-    startedAt: string,
-    timeLimit: number,
-    questions: {
-      id: string,
-      content: string,
-      type: string,
-      options?: string[]
-    }[]
-  }
-}
+paperId: string
+```
+
+**Returns:**
+```typescript
+ExamQuestionForTaking[] | null
+// {
+//   id: string,
+//   questionId: string,
+//   stem: string,
+//   type: 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'TRUE_FALSE' | 'FILL_BLANK' | 'ESSAY',
+//   options: string[],  // Available options for choice questions
+//   sortOrder: number,
+//   score: number
+// }
 ```
 
 ---
 
-#### POST /api/exams/[id]/submit
-Submit exam answers.
+#### submitAnswersAction(attemptId, answers)
+Submit exam answers and trigger grading.
 
-**Request:**
+**Parameters:**
 ```typescript
 {
-  answers: {
+  attemptId: string,
+  answers: Array<{
     questionId: string,
-    answer: string
-  }[],
-  timeTaken: number
+    answer: string | string[]  // string for single/fill-blank, string[] for multiple choice
+  }>
 }
 ```
 
-**Response:**
+**Returns:**
 ```typescript
+ActionResult<ExamResult>
 {
   success: true,
   data: {
-    resultId: string,
-    score: number,
-    maxScore: number,
-    percentage: number,
+    attemptId: string,
+    paperId: string,
+    paperTitle: string,
+    subjectName: string,
+    attemptNo: number,
+    status: 'GRADED',
+    totalScore: number,
+    passingScore: number,
     passed: boolean,
-    breakdown: {
-      correct: number,
-      incorrect: number,
-      unanswered: number
-    }
+    questionResults: QuestionResult[]
   }
 }
 ```
 
----
-
-#### GET /api/exams/[id]/result
-Get exam result details.
-
----
-
-### 3.5 Results
-
-#### GET /api/results
-Get student's result history.
-
-**Query Parameters:**
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| page | number | Page number |
-| limit | number | Items per page |
+**Grading Logic:**
+- Objective questions (SINGLE_CHOICE, MULTIPLE_CHOICE, TRUE_FALSE): Auto-graded
+- FILL_BLANK: Auto-graded with case-insensitive comparison
+- ESSAY: Returns `isCorrect: null`, requires manual grading
 
 ---
 
-#### GET /api/results/[id]
-Get specific result with answers.
+#### fetchResult(attemptId)
+Fetch exam result with question-by-question breakdown.
 
----
-
-#### GET /api/admin/results
-Get all results (admin only).
-
-**Query Parameters:**
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| paperId | uuid | Filter by paper |
-| studentId | uuid | Filter by student |
-| page | number | Page number |
-| limit | number | Items per page |
-
----
-
-### 3.6 Users (Admin)
-
-#### GET /api/users
-Get all users (admin only).
-
-**Query Parameters:**
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| role | string | Filter by role |
-| search | string | Search by name/email |
-| page | number | Page number |
-| limit | number | Items per page |
-
----
-
-#### POST /api/users/import
-Bulk import students (admin only).
-
-**Request:** Multipart form data with CSV file
-
----
-
-#### PUT /api/users/[id]
-Update user details (admin only).
-
----
-
-#### DELETE /api/users/[id]
-Soft delete user (admin only).
-
----
-
-### 3.7 Categories
-
-#### GET /api/categories
-Get all categories.
-
----
-
-#### POST /api/categories
-Create category (admin only).
-
----
-
-#### DELETE /api/categories/[id]
-Delete category (admin only).
-
----
-
-## 4. HTTP Status Codes
-
-| Code | Description |
-|------|-------------|
-| 200 | OK - Request successful |
-| 201 | Created - Resource created |
-| 204 | No Content - Successful deletion |
-| 400 | Bad Request - Invalid input |
-| 401 | Unauthorized - Invalid/missing token |
-| 403 | Forbidden - Insufficient permissions |
-| 404 | Not Found - Resource not found |
-| 422 | Unprocessable Entity - Validation failed |
-| 500 | Internal Server Error |
-
----
-
-## 5. Error Codes
-
-| Code | Description |
-|------|-------------|
-| AUTH_INVALID_CREDENTIALS | Invalid email or password |
-| AUTH_TOKEN_EXPIRED | JWT token expired |
-| AUTH_TOKEN_INVALID | Invalid JWT token |
-| AUTH_UNAUTHORIZED | Authentication required |
-| FORBIDDEN_INSUFFICIENT_PERMISSION | Admin access required |
-| VALIDATION_ERROR | Request validation failed |
-| NOT_FOUND_USER | User not found |
-| NOT_FOUND_QUESTION | Question not found |
-| NOT_FOUND_PAPER | Paper not found |
-| NOT_FOUND_RESULT | Result not found |
-| PAPER_ALREADY_PUBLISHED | Cannot modify published paper |
-| PAPER_EXAM_IN_PROGRESS | Exam already in progress |
-| EXAM_TIME_EXPIRED | Exam window closed |
-| QUESTION_IN_USE | Cannot delete question in use |
-
----
-
-## 6. Rate Limiting
-
-- **Authentication**: 5 requests per minute
-- **General API**: 100 requests per minute
-- **Exam Submission**: 10 requests per minute
-
----
-
-## 7. Versioning
-
-API versioning via URL path:
-```
-/api/v1/questions
+**Parameters:**
+```typescript
+attemptId: string
 ```
 
-Current version: v1
+**Returns:**
+```typescript
+ExamResult | null
+// {
+//   attemptId: string,
+//   paperId: string,
+//   paperTitle: string,
+//   subjectName: string,
+//   attemptNo: number,
+//   totalScore: number,
+//   passingScore: number,
+//   passed: boolean,
+//   questionResults: QuestionResult[]
+// }
+```
+
+**QuestionResult:**
+```typescript
+{
+  questionId: string,
+  stem: string,
+  type: QuestionType,
+  studentAnswer: string | string[],
+  correctAnswer: string | string[],
+  isCorrect: boolean | null,  // null for ESSAY (not graded)
+  score: number | null,
+  maxScore: number
+}
+```
+
+---
+
+### 3.2 Wrong Book (Student)
+
+#### fetchWrongQuestions()
+Get all wrong questions for current student.
+
+**Returns:**
+```typescript
+WrongQuestionItem[]
+// [{
+//   id: string,
+//   questionId: string,
+//   questionStem: string,
+//   questionType: string,
+//   subjectName: string,
+//   wrongCount: number,
+//   lastWrongAt: Date,
+//   corrected: boolean
+// }]
+```
+
+**Filters:**
+- Only returns questions where `corrected === false`
+- Ordered by `lastWrongAt` descending
+
+---
+
+### 3.3 Question Management (Admin)
+
+#### fetchQuestions(filter?)
+Get paginated question list.
+
+**Parameters:**
+```typescript
+{
+  page?: number,
+  limit?: number,
+  subjectId?: string,
+  type?: QuestionType,
+  difficulty?: Difficulty,
+  search?: string
+}
+```
+
+---
+
+#### createQuestionAction(data)
+Create a new question.
+
+**Parameters:**
+```typescript
+{
+  subjectId: string,
+  type: QuestionType,
+  stem: string,
+  optionsJson?: string,    // JSON array for choice questions
+  answerJson: string,      // Correct answer(s)
+  analysis?: string,       // Explanation
+  difficulty: Difficulty
+}
+```
+
+---
+
+#### updateQuestionAction(id, data)
+Update existing question.
+
+---
+
+#### deleteQuestionAction(id)
+Soft delete a question.
+
+---
+
+### 3.4 Paper Management (Admin)
+
+#### fetchPapers(filter?)
+Get paper list.
+
+---
+
+#### createPaperAction(data)
+Create exam paper.
+
+**Parameters:**
+```typescript
+{
+  title: string,
+  subjectId: string,
+  description?: string,
+  durationMinutes: number,
+  passingScore: number,
+  questionIds: string[]     // Selected question IDs
+}
+```
+
+---
+
+#### publishPaperAction(paperId)
+Publish paper to make it available to students.
+
+---
+
+## 4. Database Entities
+
+### ExamAttempt
+```typescript
+{
+  id: string,
+  paperId: string,
+  studentId: string,
+  attemptNo: number,
+  status: 'NOT_STARTED' | 'IN_PROGRESS' | 'SUBMITTED' | 'GRADED' | 'EXPIRED',
+  startTime: Date | null,
+  submitTime: Date | null,
+  totalScore: number | null,
+  autoGradedAt: Date | null
+}
+```
+
+### ExamAnswer
+```typescript
+{
+  id: string,
+  attemptId: string,
+  questionId: string,
+  studentAnswerJson: string,   // Serialized as JSON
+  isCorrect: boolean | null,   // null until graded
+  score: number | null,
+  reviewedAt: Date | null      // For manual grading
+}
+```
+
+### WrongQuestion
+```typescript
+{
+  id: string,
+  studentId: string,
+  questionId: string,
+  sourceAttemptId: string | null,
+  wrongCount: number,
+  lastWrongAt: Date,
+  corrected: boolean,
+  note: string | null
+}
+```
+
+---
+
+## 5. Security Considerations
+
+- All student actions verify `session.userId === attempt.studentId`
+- Exam answers never expose correct answers to client
+- Question answers (answerJson) only fetched server-side during grading
+- Role-based access control enforced via `guardStudent()` / `guardAdmin()`
+
+---
+
+## 6. Question Types
+
+| Type | Grading | Answer Format |
+|------|---------|---------------|
+| SINGLE_CHOICE | Auto | string (e.g., "A") |
+| MULTIPLE_CHOICE | Auto | string[] (e.g., ["A", "C"]) |
+| TRUE_FALSE | Auto | string ("true"/"false") |
+| FILL_BLANK | Auto | string |
+| ESSAY | Manual | string |
+
+---
+
+## 7. Grading Flow
+
+1. Student submits answers via `submitAnswersAction`
+2. Server serializes answers and saves to `ExamAnswer`
+3. Server updates attempt status to SUBMITTED
+4. Server calls `gradeAttempt`:
+   - For each question: grades and updates ExamAnswer
+   - If incorrect: records to WrongQuestion table
+   - Updates attempt status to GRADED
+   - Calculates total score
+5. Returns ExamResult to client
+6. Student can view result at `/exam/[attemptId]/result`

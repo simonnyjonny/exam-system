@@ -1,0 +1,53 @@
+'use client';
+
+import Link from 'next/link';
+import { QuestionEditForm } from './question-edit-form';
+import { LanguageToggle } from '@/components/LanguageToggle';
+import { useBilingual } from '@/contexts/BilingualContext';
+
+interface EditQuestionClientProps {
+  questionId: string;
+  question: any;
+  subjects: any[];
+  notFound?: boolean;
+}
+
+export function EditQuestionClient({ questionId, question, subjects, notFound }: EditQuestionClientProps) {
+  const { t } = useBilingual();
+
+  if (notFound) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-slate-600 mb-4">{t('题目未找到', 'Question not found')}</p>
+          <Link href="/admin/questions" className="text-slate-900 hover:underline">
+            {t('返回题目列表', 'Back to questions')}
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <header className="bg-white border-b border-slate-200">
+        <div className="max-w-4xl mx-auto px-4 py-4 flex justify-between items-center">
+          <h1 className="text-xl font-bold text-slate-900">{t('编辑题目', 'Edit Question')}</h1>
+          <nav className="flex gap-4 items-center">
+            <Link href="/admin" className="text-slate-600 hover:text-slate-900">{t('概览', 'Overview')}</Link>
+            <Link href="/admin/questions" className="text-slate-600 hover:text-slate-900">{t('题目', 'Questions')}</Link>
+            <Link href="/admin/papers" className="text-slate-600 hover:text-slate-900">{t('试卷', 'Papers')}</Link>
+            <Link href="/admin/students" className="text-slate-600 hover:text-slate-900">{t('学生', 'Students')}</Link>
+            <LanguageToggle />
+          </nav>
+        </div>
+      </header>
+      
+      <main className="max-w-4xl mx-auto px-4 py-8">
+        <div className="bg-white rounded-xl border border-slate-200 p-6">
+          <QuestionEditForm question={question} subjects={subjects} />
+        </div>
+      </main>
+    </div>
+  );
+}
